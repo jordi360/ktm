@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Image Alignment</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+        #header {
+            background: #2d2d2d;
+            padding: 15px;
+            border-bottom: 2px solid #00ff88;
+        }
+        button {
+            background: #00ff88;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #00cc6e;
+        }
+        #canvasContainer {
+            width: 100vw;
+            height: calc(100vh - 100px);
+            overflow: auto;
+            background: #0a0a0a;
+        }
+        #canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        #info {
+            background: #2d2d2d;
+            padding: 10px 15px;
+            font-size: 12px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h2>Simple Image Alignment</h2>
+        <input type="file" id="fileInput" multiple accept="image/*">
+        <button onclick="saveJSON()">Save JSON</button>
+        <label>
+            Alpha: <input type="range" id="alphaSlider" min="0" max="100" value="50" style="width: 150px">
+            <span id="alphaValue">50%</span>
+        </label>
+        <label>
+            <input type="checkbox" id="alphaToggle"> Enable transparency
+        </label>
+    </div>
+
+    <div id="canvasContainer">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div id="info">
+        <span id="status">Load images to start</span> |
+        Click to select • Drag to move • A: toggle alpha • Delete: remove • [/]: cycle
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const fileInput = document.getElementById('fileInput');
+        const alphaSlider = document.getElementById('alphaSlider');
+        const alphaValue = document.getElementById('alphaValue');
+        const alphaToggle = document.getElementById('alphaToggle');
+        const status = document.getElementById('status');
+
+        // Simple state
+        let images = [];  // { img, name, x, y }
+        let selected = 0;
+        let dragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        let wrapWidth = 0;
+
+        // Load images
+        fileInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            images = [];
+
+            for (const file of files) {
+                const img = await loadImage(file);
+                images.push({
+                    img: img,
+                    name: file.name,
+                    x: 0,
+                    y: images.length * 200  // Stack vertically
+                });
+            }
+
+            if (images.length > 0) {
+                wrapWidth = Math.max(...images.map(im => im.img.width));
+                canvas.width = wrapWidth * 3;  // Room for wrapping
+                canvas.height = 2000;  // Big canvas
+                selected = 0;
+                draw();
+                status.textContent = `Loaded ${images.length} images`;
+            }
+        });
+
+        function loadImage(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        function wrap(x) {
+            if (wrapWidth === 0) return x;
+            x = x % wrapWidth;
+            if (x < 0) x += wrapWidth;
+            return x;
+        }
+
+        function draw() {
+            // Clear
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const alpha = alphaToggle.checked ? alphaSlider.value / 100 : 1;
+
+            // Draw each image (3 times for wrapping)
+            images.forEach((item, idx) => {
+                const wrappedX = wrap(item.x);
+                const positions = [wrappedX - wrapWidth, wrappedX, wrappedX + wrapWidth];
+
+                const imgAlpha = (idx === selected) ? alpha : 1;
+
+                positions.forEach(x => {
+                    // Draw image with alpha
+                    ctx.globalAlpha = imgAlpha;
+                    ctx.drawImage(item.img, x, item.y);
+
+                    // Draw border and label without alpha
+                    ctx.globalAlpha = 1;
+                    ctx.strokeStyle = (idx === selected) ? '#00ff88' : '#555';
+                    ctx.lineWidth = (idx === selected) ? 3 : 1;
+                    ctx.strokeRect(x, item.y, item.img.width, item.img.height);
+
+                    // Draw label
+                    ctx.fillStyle = (idx === selected) ? '#00ff88' : '#fff';
+                    ctx.font = '14px monospace';
+                    ctx.fillText(`${idx}: ${item.name}`, x + 5, item.y + 20);
+                });
+            });
+
+            // Update status
+            if (images.length > 0) {
+                status.textContent = `Selected: ${selected} | ${images[selected].name} | Position: (${Math.round(images[selected].x)}, ${Math.round(images[selected].y)})`;
+            }
+        }
+
+        // Mouse down - start drag
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            // Find which image was clicked (top to bottom)
+            for (let i = images.length - 1; i >= 0; i--) {
+                const item = images[i];
+                const wrappedX = wrap(item.x);
+                const positions = [wrappedX - wrapWidth, wrappedX, wrappedX + wrapWidth];
+
+                for (const x of positions) {
+                    if (mx >= x && mx < x + item.img.width &&
+                        my >= item.y && my < item.y + item.img.height) {
+                        selected = i;
+                        dragging = true;
+                        dragOffsetX = mx - x;
+                        dragOffsetY = my - item.y;
+                        draw();
+                        return;
+                    }
+                }
+            }
+        });
+
+        // Mouse move - drag
+        canvas.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            // Update position
+            images[selected].x = wrap(mx - dragOffsetX);
+            images[selected].y = my - dragOffsetY;
+
+            draw();
+        });
+
+        // Mouse up - stop drag
+        canvas.addEventListener('mouseup', () => {
+            dragging = false;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            dragging = false;
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (images.length === 0) return;
+
+            if (e.key === 'a' || e.key === 'A') {
+                alphaToggle.checked = !alphaToggle.checked;
+                draw();
+            } else if (e.key === '[') {
+                selected = (selected - 1 + images.length) % images.length;
+                draw();
+            } else if (e.key === ']') {
+                selected = (selected + 1) % images.length;
+                draw();
+            } else if (e.key === 'Delete' || e.key === 'x') {
+                if (confirm(`Remove ${images[selected].name}?`)) {
+                    images.splice(selected, 1);
+                    if (images.length > 0) {
+                        selected = Math.min(selected, images.length - 1);
+                    }
+                    draw();
+                }
+            }
+        });
+
+        // Alpha slider
+        alphaSlider.addEventListener('input', () => {
+            alphaValue.textContent = alphaSlider.value + '%';
+            if (alphaToggle.checked) draw();
+        });
+
+        alphaToggle.addEventListener('change', draw);
+
+        function saveJSON() {
+            if (images.length === 0) return;
+
+            const data = {
+                wrapWidth: wrapWidth,
+                images: images.map(item => ({
+                    filename: item.name,
+                    x: Math.round(item.x),
+                    y: Math.round(item.y),
+                    width: item.img.width,
+                    height: item.img.height
+                }))
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'alignment.json';
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log('Saved:', data);
+        }
+    </script>
+</body>
+</html>

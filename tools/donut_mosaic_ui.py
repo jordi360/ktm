@@ -97,6 +97,8 @@ class MosaicEditor:
         self.dragging = False
         self.drag_start_y = 0
         self.offset_start = 0
+        self.current_shift = 0
+        self.last_canvas_shape = None
 
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
         cv2.setMouseCallback(WINDOW_NAME, self.mouse_callback)
@@ -125,8 +127,9 @@ class MosaicEditor:
 
         # avoid division by zero
         mask = weight > 0
-        canvas = np.zeros_like(acc, dtype=np.uint8)
-        canvas[mask.squeeze(-1)] = (acc[mask] / weight[mask]).astype(np.uint8)
+        canvas_float = np.zeros_like(acc, dtype=np.float32)
+        np.divide(acc, weight, out=canvas_float, where=mask)
+        canvas = np.clip(canvas_float, 0, 255).astype(np.uint8)
 
         # visual indicators: draw strip indices on rough centers
         for idx, (off, h) in enumerate(zip(self.offsets, self.heights)):
@@ -156,7 +159,7 @@ class MosaicEditor:
         )
         cv2.putText(
             canvas,
-            "Use [ / ] to change strip, drag with mouse to move, 's' to save, 'q'/ESC to quit.",
+            "Click strip to select, drag to move. Use [ / ] to cycle, 's' to save, 'q'/ESC to quit.",
             (10, 60),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
@@ -165,16 +168,51 @@ class MosaicEditor:
             cv2.LINE_AA,
         )
 
+        self.current_shift = shift
+        self.last_canvas_shape = (canvas_h, canvas_w)
         return canvas, shift, canvas_h, canvas_w
 
+    def _window_to_canvas(self, x, y):
+        if not self.last_canvas_shape:
+            return x, y
+        if hasattr(cv2, "getWindowImageRect"):
+            try:
+                _, _, win_w, win_h = cv2.getWindowImageRect(WINDOW_NAME)
+            except cv2.error:
+                win_w, win_h = 0, 0
+        else:
+            win_w, win_h = 0, 0
+        if win_w <= 0 or win_h <= 0:
+            return x, y
+        canvas_h, canvas_w = self.last_canvas_shape
+        scale_x = canvas_w / float(win_w)
+        scale_y = canvas_h / float(win_h)
+        return int(x * scale_x), int(y * scale_y)
+
+    def _strip_index_at_canvas_y(self, y):
+        shift = self.current_shift
+        for idx in reversed(range(self.n)):
+            top = self.offsets[idx] + shift
+            bottom = top + self.heights[idx]
+            if top <= y < bottom:
+                return idx
+        return None
+
     def mouse_callback(self, event, x, y, flags, param):
+        _, canvas_y = self._window_to_canvas(x, y)
         if event == cv2.EVENT_LBUTTONDOWN:
+            idx = self._strip_index_at_canvas_y(canvas_y)
+            if idx is None:
+                self.dragging = False
+                return
+            self.active_index = idx
             self.dragging = True
-            self.drag_start_y = y
+            self.drag_start_y = canvas_y
             self.offset_start = self.offsets[self.active_index]
 
         elif event == cv2.EVENT_MOUSEMOVE and self.dragging:
-            dy = y - self.drag_start_y
+            _, canvas_y = self._window_to_canvas(x, y)
+            dy = canvas_y - self.drag_start_y
             self.offsets[self.active_index] = self.offset_start + dy
 
         elif event == cv2.EVENT_LBUTTONUP:
@@ -237,13 +275,13 @@ def main():
         "--input",
         "-i",
         required=True,
-        help="Folder containing the donut images to unwrap",
+        help="Folder containing the donut images (raw or already unwrapped)",
     )
     parser.add_argument(
         "--params",
         "-p",
-        required=True,
-        help="Path to JSON file with donut parameters (center/radii)",
+        required=False,
+        help="Path to JSON file with donut parameters (center/radii). If omitted, images in --input are assumed to be pre-unwrapped.",
     )
     parser.add_argument(
         "--overlap",
@@ -257,7 +295,7 @@ def main():
         print(f"Input folder not found: {args.input}")
         return
 
-    if not os.path.isfile(args.params):
+    if args.params and not os.path.isfile(args.params):
         print(f"Params JSON not found: {args.params}")
         return
 
@@ -266,14 +304,28 @@ def main():
         print("No images found in folder.")
         return
 
-    print(f"Found {len(images)} images to unwrap and stitch using {args.params}.")
+    if args.params:
+        print(f"Found {len(images)} images to unwrap and stitch using {args.params}.")
+    else:
+        print(f"Found {len(images)} unwrapped images to stitch directly.")
 
-    # unwrap all strips
+    # unwrap or load all strips
     strips = []
     for img_path in images:
-        print(f"Unwrapping {img_path}...")
-        strip = unwrap_donut_in_memory(img_path, args.params, use_json_image_path=False)
+        action = "Unwrapping" if args.params else "Reading"
+        print(f"{action} {img_path}...")
+        if args.params:
+            strip = unwrap_donut_in_memory(img_path, args.params, use_json_image_path=False)
+        else:
+            strip = cv2.imread(img_path, cv2.IMREAD_COLOR)
+            if strip is None:
+                print(f"  Warning: could not read {img_path}, skipping.")
+                continue
         strips.append(strip)
+
+    if not strips:
+        print("No valid strips were loaded. Nothing to do.")
+        return
 
     # unify widths
     max_w = max(s.shape[1] for s in strips)

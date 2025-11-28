@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Alignment Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        #header {
+            background: #2d2d2d;
+            padding: 15px;
+            border-bottom: 2px solid #00ff88;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        button {
+            background: #00ff88;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #00cc6e;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        #canvasContainer {
+            position: relative;
+            width: 100vw;
+            height: calc(100vh - 120px);
+            overflow: auto;
+            background: #0a0a0a;
+        }
+
+        #canvas {
+            display: block;
+            cursor: grab;
+            image-rendering: pixelated;
+        }
+
+        #canvas.dragging {
+            cursor: grabbing;
+        }
+
+        #info {
+            background: #2d2d2d;
+            padding: 12px 15px;
+            border-top: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        #imageList {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .imageItem {
+            background: #3d3d3d;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .imageItem:hover {
+            background: #4d4d4d;
+        }
+
+        .imageItem.active {
+            background: #00ff88;
+            color: #000;
+            border-color: #00ff88;
+            font-weight: 600;
+        }
+
+        .imageItem.transparent {
+            opacity: 0.5;
+        }
+
+        #shortcuts {
+            font-size: 12px;
+            color: #999;
+        }
+
+        #shortcuts span {
+            margin-right: 15px;
+        }
+
+        #shortcuts kbd {
+            background: #444;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h2>🎨 Image Alignment Tool</h2>
+        <div id="controls">
+            <label for="fileInput">
+                <button onclick="document.getElementById('fileInput').click()">
+                    📁 Load Images
+                </button>
+            </label>
+            <input type="file" id="fileInput" multiple accept="image/*">
+            <button id="saveBtn" onclick="saveAlignment()" disabled>💾 Save JSON</button>
+            <button id="removeBtn" onclick="removeActive()" disabled>🗑️ Remove</button>
+            <label>
+                Alpha: <input type="range" id="alphaSlider" min="0" max="100" value="35"
+                    style="width: 100px; vertical-align: middle;">
+                <span id="alphaValue">35%</span>
+            </label>
+        </div>
+    </div>
+
+    <div id="canvasContainer">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div id="info">
+        <div id="imageList"></div>
+        <div id="shortcuts">
+            <span><kbd>Click</kbd> Select image</span>
+            <span><kbd>Drag</kbd> Move image</span>
+            <span><kbd>A</kbd> Toggle transparency</span>
+            <span><kbd>Delete</kbd> Remove</span>
+            <span><kbd>[</kbd> <kbd>]</kbd> Cycle</span>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const fileInput = document.getElementById('fileInput');
+        const imageList = document.getElementById('imageList');
+        const alphaSlider = document.getElementById('alphaSlider');
+        const alphaValue = document.getElementById('alphaValue');
+        const saveBtn = document.getElementById('saveBtn');
+        const removeBtn = document.getElementById('removeBtn');
+
+        let images = [];
+        let positions = [];
+        let activeIndex = 0;
+        let dragging = false;
+        let dragStartCanvas = { x: 0, y: 0 };
+        let dragStartPosition = { x: 0, y: 0 };
+        let transparencyEnabled = false;
+        let wrapWidth = 0;
+        let padding = 100;
+
+        // Load images
+        fileInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files).sort((a, b) =>
+                a.name.localeCompare(b.name)
+            );
+
+            images = [];
+            positions = [];
+
+            for (const file of files) {
+                const img = await loadImage(file);
+                images.push({ img, name: file.name });
+            }
+
+            if (images.length > 0) {
+                initializePositions();
+                updateImageList();
+                render();
+                saveBtn.disabled = false;
+                removeBtn.disabled = false;
+            }
+        });
+
+        function loadImage(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        function initializePositions() {
+            wrapWidth = Math.max(...images.map(im => im.img.width));
+            const overlapFraction = 0.15;
+            let currentY = 0;
+
+            positions = images.map(({ img }) => {
+                const pos = { x: 0, y: currentY };
+                const step = img.height * (1 - overlapFraction);
+                currentY += Math.max(25, step);
+                return pos;
+            });
+
+            activeIndex = 0;
+            updateCanvasSize();
+        }
+
+        function updateCanvasSize() {
+            const minY = Math.min(...positions.map(p => p.y));
+            const maxY = Math.max(...positions.map((p, i) =>
+                p.y + images[i].img.height
+            ));
+
+            canvas.width = wrapWidth + padding * 2;
+            canvas.height = Math.ceil(maxY - minY) + padding * 2;
+        }
+
+        function wrapValue(value, period) {
+            if (period <= 0) return value;
+            let wrapped = value % period;
+            if (wrapped < 0) wrapped += period;
+            return wrapped;
+        }
+
+        function render() {
+            updateCanvasSize();
+
+            const minY = Math.min(...positions.map(p => p.y));
+            const shiftX = padding;
+            const shiftY = -minY + padding;
+
+            // Clear canvas
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Get alpha value
+            const alpha = transparencyEnabled ? alphaSlider.value / 100 : 1.0;
+            const wrapShifts = [-wrapWidth, 0, wrapWidth];
+
+            // Draw images
+            images.forEach(({ img }, idx) => {
+                const pos = positions[idx];
+                const wrappedX = wrapValue(pos.x, wrapWidth);
+                const currentAlpha = idx === activeIndex ? alpha : 1.0;
+
+                wrapShifts.forEach(shift => {
+                    const drawX = wrappedX + shift + shiftX;
+                    const drawY = pos.y + shiftY;
+
+                    // Check if in bounds
+                    if (drawX + img.width < 0 || drawX > canvas.width ||
+                        drawY + img.height < 0 || drawY > canvas.height) {
+                        return;
+                    }
+
+                    // Draw image with alpha
+                    ctx.globalAlpha = currentAlpha;
+                    ctx.drawImage(img, drawX, drawY);
+
+                    // Draw border without alpha
+                    ctx.globalAlpha = 1.0;
+                    ctx.strokeStyle = idx === activeIndex ? '#00ff88' : '#00ff8844';
+                    ctx.lineWidth = idx === activeIndex ? 3 : 1;
+                    ctx.strokeRect(drawX, drawY, img.width, img.height);
+
+                    // Draw label
+                    ctx.fillStyle = idx === activeIndex ? '#00ff88' : '#fff';
+                    ctx.font = idx === activeIndex ? 'bold 16px monospace' : '14px monospace';
+                    ctx.fillText(`${idx}`, drawX + 8, drawY + 24);
+                });
+            });
+
+            ctx.globalAlpha = 1.0;
+
+            // Draw info overlay
+            if (images.length > 0) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(10, 10, 400, 60);
+                ctx.fillStyle = '#00ff88';
+                ctx.font = 'bold 14px monospace';
+                ctx.fillText(`Active #${activeIndex}: ${images[activeIndex].name}`, 20, 30);
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px monospace';
+                ctx.fillText(`Transparency: ${transparencyEnabled ? 'ON' : 'OFF'} (${alpha * 100}%)`, 20, 50);
+                ctx.fillText(`Position: (${Math.round(positions[activeIndex].x)}, ${Math.round(positions[activeIndex].y)})`, 20, 65);
+            }
+        }
+
+        function updateImageList() {
+            imageList.innerHTML = '';
+            images.forEach(({ name }, idx) => {
+                const div = document.createElement('div');
+                div.className = 'imageItem';
+                if (idx === activeIndex) div.classList.add('active');
+                if (transparencyEnabled && idx === activeIndex) div.classList.add('transparent');
+                div.textContent = `${idx}: ${name}`;
+                div.onclick = () => {
+                    activeIndex = idx;
+                    updateImageList();
+                    render();
+                };
+                imageList.appendChild(div);
+            });
+        }
+
+        // Mouse events
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = e.clientX - rect.left;
+            const canvasY = e.clientY - rect.top;
+
+            const minY = Math.min(...positions.map(p => p.y));
+            const shiftX = padding;
+            const shiftY = -minY + padding;
+
+            const worldX = canvasX - shiftX;
+            const worldY = canvasY - shiftY;
+
+            // Find clicked image (reverse order for top-most)
+            const wrappedWorldX = wrapValue(worldX, wrapWidth);
+            for (let idx = images.length - 1; idx >= 0; idx--) {
+                const pos = positions[idx];
+                const img = images[idx].img;
+                const wrappedPosX = wrapValue(pos.x, wrapWidth);
+
+                // Check if click is within this image
+                if (wrappedWorldX >= wrappedPosX && wrappedWorldX < wrappedPosX + img.width &&
+                    worldY >= pos.y && worldY < pos.y + img.height) {
+                    activeIndex = idx;
+                    dragging = true;
+
+                    // Store canvas position and world position at drag start
+                    dragStartCanvas.x = canvasX;
+                    dragStartCanvas.y = canvasY;
+                    dragStartPosition.x = pos.x;
+                    dragStartPosition.y = pos.y;
+
+                    canvas.classList.add('dragging');
+                    updateImageList();
+                    render();
+                    break;
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = e.clientX - rect.left;
+            const canvasY = e.clientY - rect.top;
+
+            // Calculate delta in canvas space
+            const deltaX = canvasX - dragStartCanvas.x;
+            const deltaY = canvasY - dragStartCanvas.y;
+
+            // Apply delta to starting position and wrap
+            const newX = dragStartPosition.x + deltaX;
+            const newY = dragStartPosition.y + deltaY;
+
+            positions[activeIndex].x = wrapValue(newX, wrapWidth);
+            positions[activeIndex].y = newY;
+
+            render();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            dragging = false;
+            canvas.classList.remove('dragging');
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            dragging = false;
+            canvas.classList.remove('dragging');
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (images.length === 0) return;
+
+            switch(e.key.toLowerCase()) {
+                case 'a':
+                    transparencyEnabled = !transparencyEnabled;
+                    updateImageList();
+                    render();
+                    break;
+                case '[':
+                    activeIndex = (activeIndex - 1 + images.length) % images.length;
+                    updateImageList();
+                    render();
+                    break;
+                case ']':
+                    activeIndex = (activeIndex + 1) % images.length;
+                    updateImageList();
+                    render();
+                    break;
+                case 'delete':
+                case 'x':
+                case 'd':
+                    removeActive();
+                    break;
+            }
+        });
+
+        // Alpha slider
+        alphaSlider.addEventListener('input', (e) => {
+            alphaValue.textContent = e.target.value + '%';
+            if (transparencyEnabled) render();
+        });
+
+        function removeActive() {
+            if (images.length === 0) return;
+
+            if (confirm(`Remove image "${images[activeIndex].name}"?`)) {
+                images.splice(activeIndex, 1);
+                positions.splice(activeIndex, 1);
+
+                if (images.length === 0) {
+                    saveBtn.disabled = true;
+                    removeBtn.disabled = true;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                } else {
+                    activeIndex = Math.min(activeIndex, images.length - 1);
+                }
+
+                updateImageList();
+                render();
+            }
+        }
+
+        function saveAlignment() {
+            if (images.length === 0) return;
+
+            const data = {
+                wrapWidth: wrapWidth,
+                images: images.map(({ name }, idx) => ({
+                    filename: name,
+                    offset_x: Math.round(positions[idx].x),
+                    offset_y: Math.round(positions[idx].y),
+                    width: images[idx].img.width,
+                    height: images[idx].img.height
+                }))
+            };
+
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'alignment_offsets.json';
+            a.click();
+
+            URL.revokeObjectURL(url);
+
+            console.log('Saved alignment data:', data);
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
