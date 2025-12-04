@@ -44,6 +44,15 @@
             display: block;
             cursor: crosshair;
         }
+        #imageSelector {
+            background: #3d3d3d;
+            color: #fff;
+            border: 1px solid #00ff88;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
         #info {
             background: #2d2d2d;
             padding: 10px 15px;
@@ -56,6 +65,7 @@
     <div id="header">
         <h2>Simple Image Alignment</h2>
         <input type="file" id="fileInput" multiple accept="image/*">
+        <select id="imageSelector"></select>
         <button onclick="saveJSON()">Save JSON</button>
         <label>
             Alpha: <input type="range" id="alphaSlider" min="0" max="100" value="50" style="width: 150px">
@@ -72,7 +82,7 @@
 
     <div id="info">
         <span id="status">Load images to start</span> |
-        Click to select • Drag to move • A: toggle alpha • Delete: remove • [/]: cycle
+        Click to select • Drag to move • A: toggle alpha • Delete: remove • [/]: cycle • Space: center
     </div>
 
     <script>
@@ -83,6 +93,8 @@
         const alphaValue = document.getElementById('alphaValue');
         const alphaToggle = document.getElementById('alphaToggle');
         const status = document.getElementById('status');
+        const imageSelector = document.getElementById('imageSelector');
+        const canvasContainer = document.getElementById('canvasContainer');
 
         // Simple state
         let images = [];  // { img, name, x, y }
@@ -110,8 +122,9 @@
             if (images.length > 0) {
                 wrapWidth = Math.max(...images.map(im => im.img.width));
                 canvas.width = wrapWidth * 3;  // Room for wrapping
-                canvas.height = 2000;  // Big canvas
                 selected = 0;
+                updateCanvasSize();
+                updateImageSelector();
                 draw();
                 status.textContent = `Loaded ${images.length} images`;
             }
@@ -132,7 +145,47 @@
             return x;
         }
 
+        function updateCanvasSize() {
+            if (images.length === 0) return;
+
+            // Find the bottommost point
+            let maxY = 0;
+            images.forEach(item => {
+                const bottom = item.y + item.img.height;
+                if (bottom > maxY) maxY = bottom;
+            });
+
+            // Add padding and ensure canvas is tall enough
+            canvas.height = Math.max(2000, maxY + 500);
+        }
+
+        function centerSelectedImage() {
+            if (images.length === 0) return;
+
+            const item = images[selected];
+            const imageCenter = item.y + item.img.height / 2;
+            const containerHeight = canvasContainer.clientHeight;
+
+            // Scroll to center the image in viewport
+            canvasContainer.scrollTop = imageCenter - containerHeight / 2;
+        }
+
+        function updateImageSelector() {
+            imageSelector.innerHTML = '<option value="">Select image...</option>';
+
+            images.forEach((item, idx) => {
+                const option = document.createElement('option');
+                option.value = idx;
+                option.textContent = `${idx}: ${item.name}`;
+                if (idx === selected) option.selected = true;
+                imageSelector.appendChild(option);
+            });
+        }
+
         function draw() {
+            // Update canvas size to fit all images
+            updateCanvasSize();
+
             // Clear
             ctx.fillStyle = '#0a0a0a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -189,6 +242,7 @@
                         dragging = true;
                         dragOffsetX = mx - x;
                         dragOffsetY = my - item.y;
+                        updateImageSelector();
                         draw();
                         return;
                     }
@@ -229,16 +283,24 @@
                 draw();
             } else if (e.key === '[') {
                 selected = (selected - 1 + images.length) % images.length;
+                updateImageSelector();
+                centerSelectedImage();
                 draw();
             } else if (e.key === ']') {
                 selected = (selected + 1) % images.length;
+                updateImageSelector();
+                centerSelectedImage();
                 draw();
+            } else if (e.key === ' ') {
+                e.preventDefault();  // Prevent page scroll
+                centerSelectedImage();
             } else if (e.key === 'Delete' || e.key === 'x') {
                 if (confirm(`Remove ${images[selected].name}?`)) {
                     images.splice(selected, 1);
                     if (images.length > 0) {
                         selected = Math.min(selected, images.length - 1);
                     }
+                    updateImageSelector();
                     draw();
                 }
             }
@@ -251,6 +313,16 @@
         });
 
         alphaToggle.addEventListener('change', draw);
+
+        // Image selector
+        imageSelector.addEventListener('change', (e) => {
+            const value = e.target.value;
+            if (value === '') return;
+
+            selected = parseInt(value);
+            centerSelectedImage();
+            draw();
+        });
 
         function saveJSON() {
             if (images.length === 0) return;
