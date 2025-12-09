@@ -8,6 +8,7 @@ import numpy as np
 
 
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
+DEFAULT_VERTICAL_FOV_DEG = 65.0  # documented in lens.md for the PCBPN013-WG probe
 
 
 def expand_path(path):
@@ -67,6 +68,37 @@ def load_params(json_path):
     return image_path, cx, cy, r_inner, r_outer
 
 
+def compute_output_dimensions(r_inner, r_outer, width_override=None, height_override=None, vertical_fov_deg=None):
+    """
+    Compute the unwrapped image dimensions.
+
+    Width follows the circumference at the mean radius (unless overridden).
+    Height can be deduced from the camera vertical FOV so the resulting
+    panorama matches the physical proportions of the cylinder wall.  The
+    derivation assumes the donut image captures a full 360° horizontally.
+    """
+    radial_extent = max(1, int(round(r_outer - r_inner)))
+
+    if width_override is None:
+        r_mean = 0.5 * (r_inner + r_outer)
+        width = max(1, int(round(2 * math.pi * r_mean)))
+    else:
+        width = int(width_override)
+
+    if height_override is not None:
+        height = int(height_override)
+    elif vertical_fov_deg is not None and vertical_fov_deg > 0:
+        vertical_fov_rad = math.radians(vertical_fov_deg)
+        # width ~= 2*pi*R  ->  R ~= width / (2*pi)
+        # vertical span on the cylinder ~= 2*R*tan(v_fov/2)
+        # combine both to express height in pixels directly from width
+        height = max(1, int(round(width * math.tan(vertical_fov_rad / 2.0) / math.pi)))
+    else:
+        height = radial_extent
+
+    return width, height
+
+
 def build_polar_remap(cx, cy, r_inner, r_outer, out_w=None, out_h=None):
     """
     Build OpenCV remap maps to unwrap an annulus to a rectangle.
@@ -108,6 +140,7 @@ def unwrap_donut(
     output_path=None,
     out_w=None,
     out_h=None,
+    vertical_fov_deg=None,
     show_result=True,
     preloaded_params=None,
 ):
@@ -129,6 +162,13 @@ def unwrap_donut(
     if img is None:
         raise FileNotFoundError(f"Could not load image: {candidate_path}")
 
+    out_w, out_h = compute_output_dimensions(
+        r_inner,
+        r_outer,
+        width_override=out_w,
+        height_override=out_h,
+        vertical_fov_deg=vertical_fov_deg,
+    )
     map_x, map_y, out_w, out_h = build_polar_remap(cx, cy, r_inner, r_outer, out_w, out_h)
 
     unwrapped = cv2.remap(
@@ -183,7 +223,16 @@ def main():
         "--height",
         type=int,
         default=None,
-        help="Optional output height (pixels). If omitted, uses (outer_inner - inner_radius).",
+        help="Optional output height (pixels). If omitted, it is computed from the vertical FOV (or the donut thickness when FOV scaling is disabled).",
+    )
+    parser.add_argument(
+        "--vertical-fov",
+        type=float,
+        default=DEFAULT_VERTICAL_FOV_DEG,
+        help=(
+            "Camera vertical FOV in degrees used to derive the panorama aspect ratio "
+            "when --height is not provided. Set to 0 to keep the legacy pixel-based height."
+        ),
     )
 
     args = parser.parse_args()
@@ -218,6 +267,7 @@ def main():
                 output_path=out_file,
                 out_w=args.width,
                 out_h=args.height,
+                vertical_fov_deg=args.vertical_fov,
                 show_result=False,
                 preloaded_params=params,
             )
@@ -236,6 +286,7 @@ def main():
             output_path=output_path,
             out_w=args.width,
             out_h=args.height,
+            vertical_fov_deg=args.vertical_fov,
             preloaded_params=params,
         )
 
