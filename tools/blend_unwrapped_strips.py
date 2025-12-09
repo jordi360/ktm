@@ -6,8 +6,8 @@ Typical usage:
     python tools/blend_unwrapped_strips.py \
         --images captures/E198/metal/unwrapped \
         --alignment captures/alignment.json \
-        --output captures/E198/metal/unwrapped_blend_1.png \
-        --central-fraction 0.55 --min-gap 80 --feather-px 25
+        --output captures/E198/metal/unwrapped_blend_2.png \
+        --central-fraction 0.55 --min-gap 80 --feather-px 50
 """
 
 import argparse

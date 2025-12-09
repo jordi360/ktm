@@ -261,10 +261,13 @@ python unwrap_donut.py params.json --image ./captures/E151/wp --output ./unwrapp
 # -> unwraps every supported image in the folder and saves as unwrap_<original name>
 
 
-python unwrap_donut.py /home/jordi/Documents/ais/ktm/captures/E198/metal/params.json --image /home/jordi/Documents/ais/ktm/captures/E198/metal  -o /home/jordi/Documents/ais/ktm/captures/E198/metal/unwrapped
 
 If you want more/less resolution in the unwrapped image:
 
 python unwrap_donut.py my_image_donut_params.json --width 4000 --height 300
 
+
+
+
+python tools/unwrap_donut.py captures/E198/metal/params.json --image captures/E198/metal/donut -o captures/E198/metal/unwrapped
 '''

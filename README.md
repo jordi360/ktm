@@ -65,7 +65,7 @@ The inspection process captures multiple images along the vertical axis of the c
 
 The boroscopic lens produces circular "donut" shaped images that capture the complete 360° view of the cylinder interior at each vertical position.
 
-![Raw Donut Capture](captures/E198/metal/4.png)
+![Raw Donut Capture](captures/E198/metal/donut/4.png)
 
 ---
 
@@ -94,7 +94,7 @@ The calibration generates a `params.json` file with the following structure:
 
 ```json
 {
-  "image_path": "/home/jordi/Documents/ais/ktm/captures/E198/metal/26.png",
+  "image_path": "/home/jordi/Documents/ais/ktm/captures/E198/metal/donut/26.png",
   "image_width": 2464,
   "image_height": 2056,
   "center": [1337, 969],
@@ -112,15 +112,17 @@ The calibration generates a `params.json` file with the following structure:
 
 The unwrapping process converts each donut image into a rectangular panoramic strip:
 
-![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_04.png)
+![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_4.png)
 
-#### Full Vertical Sequence
+![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_7.png)
 
-This video shows all unwrapped images in sequence, demonstrating the vertical progression through the cylinder:
-<video controls width="600" height="200">
-    <source src="captures/E198/metal/unwrapped_video.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-</video>
+![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_10.png)
+
+![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_15.png)
+
+![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_17.png)
+
+
 ---
 
 ### 2. Vertical Alignment
@@ -193,7 +195,7 @@ The system employs a custom-trained AI model specifically designed to identify m
 
 #### Example Detection Output
 
-![AI Defect Detection Results](captures/E198/metal/defect_detection_result.png)
+![AI Defect Detection Results](assets/defect_detection_result.png)
 *Example showing detected defects marked with bounding boxes and classification labels*
 
 ---
