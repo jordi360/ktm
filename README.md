@@ -65,7 +65,7 @@ The inspection process captures multiple images along the vertical axis of the c
 
 The boroscopic lens produces circular "donut" shaped images that capture the complete 360° view of the cylinder interior at each vertical position.
 
-![Raw Donut Capture](captures/E198/metal/donut/4.png)
+![Raw Donut Capture](assets/4.png)
 
 ---
 
@@ -112,15 +112,15 @@ The calibration generates a `params.json` file with the following structure:
 
 The unwrapping process converts each donut image into a rectangular panoramic strip:
 
-![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_4.png)
+![Unwrapped Image](assets/unwrap_4.png)
 
-![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_7.png)
+![Unwrapped Image](assets/unwrap_7.png)
 
-![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_10.png)
+![Unwrapped Image](assets/unwrap_10.png)
 
-![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_15.png)
+![Unwrapped Image](assets/unwrap_15.png)
 
-![Unwrapped Image](captures/E198/metal/unwrapped/unwrap_17.png)
+![Unwrapped Image](assets/unwrap_17.png)
 
 
 ---
@@ -169,7 +169,7 @@ Combine all vertically-aligned unwrapped strips into a single continuous panoram
 
 The stitching process produces a complete, continuous view of the cylinder's inner surface:
 
-![Final Stitched Panorama](captures/E198/metal/unwrapped_blend_preview.png)
+![Final Stitched Panorama](assets/unwrapped_blend_preview.png)
 
 ---
 
